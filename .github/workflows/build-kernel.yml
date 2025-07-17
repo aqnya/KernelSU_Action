@@ -113,7 +113,7 @@ jobs:
 
     - name: Setup Configuration for Kernel
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/kernel
+        cd $GITHUB_WORKSPACE/kernel_workspace/common
         sed -i 's/^POST_DEFCONFIG_CMDS="check_defconfig"/POST_DEFCONFIG_CMDS=""/' build.config.gki
         if [ ${{ env.APPLY_KSU_PATCH }} = true ]; then
             bash $GITHUB_WORKSPACE/patches/patches.sh
@@ -152,7 +152,7 @@ jobs:
 
     - name: Build kernel
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/kernel
+        cd $GITHUB_WORKSPACE/kernel_workspace/
         LTO=thin CC=clang BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
     - name: Check a kernel output files
