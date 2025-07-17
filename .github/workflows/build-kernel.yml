@@ -94,25 +94,15 @@ jobs:
 
     - name: Setup repo
       run: |
-        curl https://storage.googleapis.com/git-repo-downloads/repo -o /bin/repo
-        chmod +x /bin/repo
+        sudo curl https://storage.googleapis.com/git-repo-downloads/repo -o /bin/repo
+        sudo chmod +x /bin/repo
 
-    - name: Download kernel source
+    - name: Sync kernel source
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
         repo init -u https://android.googlesource.com/kernel/manifest.git -b common-android13-5.15-lts -m default.xml --depth=1
         repo --trace sync -c --no-clone-bundle --no-tags --fail-fast -j16
         ls
-
-    - name: Download source boot image
-      if: env.BUILD_BOOT_IMG == 'true'
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        wget -O boot-source.img ${{ env.SOURCE_BOOT_IMAGE }}
-        if [ -f boot-source.img ]; then
-            echo "FORMAT_MKBOOTING=$(echo `tools/unpack_bootimg.py --boot_img=boot-source.img --format mkbootimg`)" >> $GITHUB_ENV
-            echo "HAVE_SOURCE_BOOT_IMAGE=true" >> $GITHUB_ENV
-        fi
 
     - name: Setup KernelSU
       if: env.ENABLE_KERNELSU == 'true'
