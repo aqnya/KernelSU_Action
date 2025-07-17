@@ -102,12 +102,11 @@ jobs:
         cd $GITHUB_WORKSPACE/kernel_workspace
         repo init -u https://android.googlesource.com/kernel/manifest.git -b common-android13-5.15-lts -m default.xml --depth=1
         repo --trace sync -c --no-clone-bundle --no-tags --fail-fast -j16
-        tree .
 
     - name: Setup KernelSU
       if: env.ENABLE_KERNELSU == 'true'
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/kernel
+        cd $GITHUB_WORKSPACE/kernel_workspace/kernel/android13-5.15
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
         KSU_VERSION=$(cd KernelSU && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
         echo "UPLOADNAME=-KernelSU_$KSU_VERSION" >> $GITHUB_ENV
