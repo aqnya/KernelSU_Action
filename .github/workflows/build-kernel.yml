@@ -151,10 +151,10 @@ jobs:
         max-size: 2G
 
     - name: Build kernel
-      continue-on-error: true
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/
         LTO=thin CC=clang BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+      continue-on-error: true
 
     - name: Check a kernel output files
       run: |
