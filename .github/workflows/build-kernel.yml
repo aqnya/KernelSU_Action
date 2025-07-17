@@ -132,7 +132,6 @@ jobs:
   #    continue-on-error: true
         
     - name: Upload boot image
-      if: env.MAKE_BOOT_IMAGE_IS_OK == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
