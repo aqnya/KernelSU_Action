@@ -77,7 +77,7 @@ jobs:
         cd $GITHUB_WORKSPACE/kernel_workspace
         repo init -u https://android.googlesource.com/kernel/manifest.git -b common-android13-5.15-2025-05 -m default.xml --depth=1
         repo --trace sync -c --no-clone-bundle --no-tags --fail-fast -j16
-        tar -cvf gki_5.15-Android13.tar ./*
+        tar -cvf gki_5.15-Android13.tar ./common
 
     - name: Setup KernelSU
       if: env.ENABLE_KERNELSU == 'true'
@@ -129,7 +129,7 @@ jobs:
     - name: Build kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/
-        LTO=thin CC=clang BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+        LTO=full CC=clang BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
   #    continue-on-error: true
         
     - name: Upload boot image
