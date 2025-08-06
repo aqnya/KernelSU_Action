@@ -137,3 +137,10 @@ jobs:
       with:
         name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/out/android13-5.15/dist/boot-img.tar.gz
+
+    - name: Upload boot image
+      uses: actions/upload-artifact@v4
+      with:
+        name: gki_5.15-Android13.tar
+        path: kernel_workspace/gki_5.15-Android13.tar
+
