@@ -130,7 +130,7 @@ jobs:
     - name: Build kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/
-        LTO=thin CC=clang BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+        LTO=full CC=clang BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
   #    continue-on-error: true
         
     - name: Upload boot image
@@ -139,7 +139,7 @@ jobs:
         name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/out/android13-5.15/dist/boot-img.tar.gz
 
-    - name: Upload boot image
+    - name: Upload kernel source
       uses: actions/upload-artifact@v4
       with:
         name: gki_5.15-Android13.tar
