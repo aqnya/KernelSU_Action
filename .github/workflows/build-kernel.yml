@@ -91,7 +91,7 @@ jobs:
     - name: Setup FMAC
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        curl -sSL https://raw.githubusercontent.com/aqnya/FMAC/main/scripts/5.15.sh | bash -
+        curl -sSL https://raw.githubusercontent.com/FMAC-Team/FMAC/main/scripts/5.15.sh | bash -
 
 
     - name: Setup Configuration for Kernel
