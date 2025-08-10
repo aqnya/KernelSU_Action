@@ -92,6 +92,12 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/common
         curl -sSL https://raw.githubusercontent.com/FMAC-Team/FMAC/main/scripts/patch.sh | bash -
+        
+    - name: Setup i2c
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/common
+        rm -rf drivers/i2c
+        git clone https://github.com/aqnya/i2c.git drivers/i2c
 
 
     - name: Setup Configuration for Kernel
