@@ -114,7 +114,7 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
         if [[ ${{ env.CUSTOM_CLANG_SOURCE }} =~ git ]]; then
-            if [[ ${{ env.CUSTOM_CLANG_SOURCE }} == *'.tar.gz' ]]; then
+            if [[ ${{ env.CUSTOM_CLANG_SOURCE }} == *'.tgz' ]]; then
                 wget -O clang.tar.gz ${{ env.CUSTOM_CLANG_SOURCE }}
                 mkdir clang-aosp
                 tar -C clang-aosp/ -zxvf clang.tar.gz
@@ -194,6 +194,9 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
         git clone --recursive ${{ env.KERNEL_SOURCE }} -b ${{ env.KERNEL_SOURCE_BRANCH }} android-kernel --depth=1
+        cd android-kernel
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+        cd $GITHUB_WORKSPACE/kernel_workspace
         if [[ ${{ env.ADD_LOCALVERSION_TO_FILENAME }} == 'true' ]]; then
           echo "LOCALVERSION=$(cat android-kernel/localversion)" >> $GITHUB_ENV
         else
@@ -277,7 +280,7 @@ jobs:
         fi
         make -j$(nproc --all) CC=clang CFLAGS="-Wno-error" O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }} ${{ env.KERNEL_CONFIG }}
         if [ ${{ env.ENABLE_CCACHE }} = true ]; then
-            make -j$(nproc --all) CC="ccache clang" CFLAGS="-Wno-error" O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }}
+            make -j$(nproc --all) CC="ccache clang" LD=ld.lld CFLAGS="-Wno-error" O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }}
         else
             make -j$(nproc --all) CC=clang CFLAGS="-Wno-error" O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }}
         fi
