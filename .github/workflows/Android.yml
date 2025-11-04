@@ -8,6 +8,7 @@ jobs:
     env:
       AVD_NAME: custom_avd
       KERNEL_BRANCH: common-android15-6.1
+    timeout-minutes: 45  # Job 级超时，覆盖步骤
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,7 +30,7 @@ jobs:
 
       - name: Install System Image Explicitly
         run: |
-          sdkmanager "system-images;android-35;google_apis;x86_64"
+          sdkmanager "system-images;android-35;google_apis;x86_64" --no-progress  # --no-progress 减少日志噪音
 
       - name: Cache AVD
         uses: actions/cache@v4
@@ -45,22 +46,40 @@ jobs:
 
       - name: Setup Bazelisk
         uses: bazelbuild/setup-bazelisk@v3
+        with:
+          bazelisk-version: v1.19.0  # 稳定版，支持 GKI 构建
+
+      - name: Cache Kernel Source
+        uses: actions/cache@v4
+        with:
+          path: kernel
+          key: ${{ runner.os }}-kernel-${{ env.KERNEL_BRANCH }}-${{ hashFiles('kernel/.repo/manifest.xml') }}  # 基于分支和 manifest 哈希
+          restore-keys: ${{ runner.os }}-kernel-${{ env.KERNEL_BRANCH }}
 
       - name: Build Custom GKI Kernel
+        timeout-minutes: 30  # 步骤级超时
         run: |
           # 安装 repo 工具
           mkdir -p ~/bin
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
           export PATH=~/bin:$PATH
-          # 克隆内核源代码
-          mkdir kernel && cd kernel
-          repo init -u https://android.googlesource.com/kernel/manifest -b "$KERNEL_BRANCH"
-          repo sync -j$(nproc) -c -f --force-sync
+          # 克隆/同步内核源代码（优化为浅克隆）
+          mkdir -p kernel && cd kernel
+          if [ ! -d ".repo" ] || [ -z "$(ls -A .repo/manifests)" ]; then
+            echo "Cache miss: Running repo init and sync"
+            repo init -u https://android.googlesource.com/kernel/manifest -b "$KERNEL_BRANCH"
+            repo sync -j$(nproc) -c --no-tags --depth=1 -f --force-sync --no-clone-bundle || true  # 浅克隆 + 容错
+          else
+            echo "Cache hit: Skipping sync"
+            repo sync -c --no-tags --depth=1 -f  # 轻量更新
+          fi
           # 构建 virtual_device_x86_64（GKI 内核）
-          tools/bazel run //common-modules/virtual-device:virtual_device_x86_64_dist -- --destdir=out
-          # 输出路径（bzImage 为 x86_64 内核镜像）
+          tools/bazel run //common-modules/virtual-device:virtual_device_x86_64_dist -- --destdir=out --verbose_failures
+          # 检查输出
+          ls -la out/virtual_device_x86_64/dist/
           echo "KERNEL_PATH=$(pwd)/out/virtual_device_x86_64/dist/bzImage" >> $GITHUB_ENV
+        continue-on-error: false  # 失败时停止
 
       - name: Launch Emulator with Custom Kernel
         run: |
@@ -90,16 +109,19 @@ jobs:
             exit 1
           fi
           "$ANDROID_HOME/platform-tools/adb" shell getprop ro.build.version.release  # 应输出 15
-          "$ANDROID_HOME/platform-tools/adb" shell uname -r  # 显示自定义 GKI 内核版本
+          "$ANDROID_HOME/platform-tools/adb" shell uname -r  # 显示自定义 GKI 内核版本 (~6.1.x)
 
       - name: Run Tests
         run: |
           ./gradlew connectedCheck || true
           "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill
 
-      - name: Upload Logs
+      - name: Upload Logs and Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-logs
-          path: emulator.log
+          name: build-logs
+          path: |
+            emulator.log
+            kernel/tools/bazel-*.log  # Bazel 日志
+            kernel/.repo/logs/  # Repo sync 日志（如果存在）
