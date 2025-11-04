@@ -82,8 +82,8 @@ jobs:
           mkdir -p kernel && cd kernel
           if [ ! -d ".repo" ]; then
             echo "初始化 repo..."
-            repo init -u https://android.googlesource.com/kernel/manifest -b "$KERNEL_BRANCH" --depth=1
-            repo sync -j$(nproc) -c --no-tags --no-clone-bundle
+            repo init -u https://android.googlesource.com/kernel/manifest.git -b common-android13-5.15-lts -m default.xml --depth=1
+            repo --trace sync -c --no-clone-bundle --no-tags --fail-fast -j16
           else
             echo "更新现有 repo..."
             repo sync -j$(nproc) -c --no-tags
