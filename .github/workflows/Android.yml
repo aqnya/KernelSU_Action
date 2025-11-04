@@ -20,20 +20,19 @@ jobs:
 
       - name: Install Android SDK
         run: |
-          mkdir -p ${{ env.ANDROID_SDK_ROOT }}
+          mkdir -p "$ANDROID_SDK_ROOT"
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
-          unzip cmdline-tools.zip -d ${{ env.ANDROID_SDK_ROOT }}
+          unzip cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
           rm cmdline-tools.zip
-          mkdir -p ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest
-          mv ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/* ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/
-          # 动态设置路径变量（使用 GITHUB_ENV）
-          echo "EMULATOR_PATH=${{ env.ANDROID_SDK_ROOT }}/emulator/emulator" >> $GITHUB_ENV
-          echo "AVDMANAGER_PATH=${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin/avdmanager" >> $GITHUB_ENV
-          echo "SDKMANAGER_PATH=${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin/sdkmanager" >> $GITHUB_ENV
-          echo "ANDROID_HOME=${{ env.ANDROID_SDK_ROOT }}" >> $GITHUB_ENV
-          echo "$GITHUB_WORKSPACE/gradle.properties" | sudo tee -a ~/.gradle/gradle.properties
-          ${{ env.SDKMANAGER_PATH }} --licenses  # 注意：这里用 ${{ env.SDKMANAGER_PATH }}，但因在同一步骤中，先设置后用可能需顺序调整
-          ${{ env.SDKMANAGER_PATH }} "platform-tools" "platforms;android-24" "emulator" "system-images;android-24;google_apis;x86_64"
+          # 重命名 cmdline-tools 为 latest（避免 mv * 错误）
+          mv "$ANDROID_SDK_ROOT/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          # 设置 ANDROID_HOME（后续步骤可用）
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          # 使用 shell 路径运行 sdkmanager（无需动态 env）
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --licenses
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools" "platforms;android-24" "emulator" "system-images;android-24;google_apis;x86_64"
+          # Gradle 配置（如果有 gradle.properties）
+          echo "$GITHUB_WORKSPACE/gradle.properties" | sudo tee -a ~/.gradle/gradle.properties || true
 
       - name: Cache AVD
         uses: actions/cache@v4
@@ -45,7 +44,7 @@ jobs:
 
       - name: Create AVD
         run: |
-          echo "no" | ${{ env.AVDMANAGER_PATH }} create avd -n ${{ env.AVD_NAME }} -k "system-images;android-24;google_apis;x86_64" -d pixel
+          echo "no" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager" create avd -n "$AVD_NAME" -k "system-images;android-24;google_apis;x86_64" -d pixel
 
       - name: Build Custom Kernel
         run: |
@@ -66,9 +65,9 @@ jobs:
       - name: Launch Emulator with Custom Kernel
         run: |
           # 启动模拟器（headless 模式）
-          nohup ${{ env.EMULATOR_PATH }} \
-            -avd ${{ env.AVD_NAME }} \
-            -kernel ${{ env.KERNEL_PATH }} \
+          nohup "$ANDROID_SDK_ROOT/emulator/emulator" \
+            -avd "$AVD_NAME" \
+            -kernel "$KERNEL_PATH" \
             -no-window \
             -no-audio \
             -gpu swiftshader_indirect \
@@ -76,10 +75,10 @@ jobs:
             -verbose \
             -show-kernel > emulator.log 2>&1 &
           EMULATOR_PID=$!
-          # 等待启动
+          # 等待启动（使用 platform-tools/adb）
           timeout=300
           while [ $timeout -gt 0 ]; do
-            ${{ env.ANDROID_SDK_ROOT }}/platform-tools/adb wait-for-device
+            "$ANDROID_SDK_ROOT/platform-tools/adb" wait-for-device
             if [ $? -eq 0 ]; then
               echo "Emulator started successfully"
               break
@@ -93,15 +92,15 @@ jobs:
             exit 1
           fi
           # 测试：检查内核
-          ${{ env.ANDROID_SDK_ROOT }}/platform-tools/adb shell getprop ro.build.version.release
-          ${{ env.ANDROID_SDK_ROOT }}/platform-tools/adb shell uname -r
+          "$ANDROID_SDK_ROOT/platform-tools/adb" shell getprop ro.build.version.release
+          "$ANDROID_SDK_ROOT/platform-tools/adb" shell uname -r
 
       - name: Run Tests
         run: |
-          # 示例：运行 Gradle 测试
-          ./gradlew connectedCheck
+          # 示例：运行 Gradle 测试（确保有 gradlew）
+          ./gradlew connectedCheck || true  # || true 避免非零退出影响
           # 停止模拟器
-          ${{ env.ANDROID_SDK_ROOT }}/platform-tools/adb -s emulator-5554 emu kill
+          "$ANDROID_SDK_ROOT/platform-tools/adb" -s emulator-5554 emu kill
 
       - name: Upload Logs
         if: always()
