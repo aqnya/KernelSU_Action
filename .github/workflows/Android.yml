@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AVD_NAME: custom_avd
-      KERNEL_BRANCH: common-android15-6.1
+      KERNEL_BRANCH: common-android-mainline
     timeout-minutes: 45
     steps:
       - name: Checkout
