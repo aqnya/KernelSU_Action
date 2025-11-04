@@ -1,4 +1,4 @@
-name: Custom Kernel Android Emulator
+name: Custom Kernel Android Emulator with SDK Action
 
 on: [push, pull_request]
 
@@ -7,7 +7,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AVD_NAME: custom_avd
-      ANDROID_SDK_ROOT: ~/android-sdk
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,21 +17,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android SDK
-        run: |
-          mkdir -p "$ANDROID_SDK_ROOT"
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
-          unzip cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
-          rm cmdline-tools.zip
-          # 重命名 cmdline-tools 为 latest（避免 mv * 错误）
-          mv "$ANDROID_SDK_ROOT/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-          # 设置 ANDROID_HOME（后续步骤可用）
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          # 使用 shell 路径运行 sdkmanager（无需动态 env）
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --licenses
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools" "platforms;android-24" "emulator" "system-images;android-24;google_apis;x86_64"
-          # Gradle 配置（如果有 gradle.properties）
-          echo "$GITHUB_WORKSPACE/gradle.properties" | sudo tee -a ~/.gradle/gradle.properties || true
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 24  # Android 7.0
+          target: google_apis  # 或 default
+          arch: x86_64
+          components: platform-tools,emulator,system-images;android-24;google_apis;x86_64
+          ndk-version: 25.1.8937393  # 可选，如果需要 NDK
+          accept-licenses: true  # 自动接受许可
 
       - name: Cache AVD
         uses: actions/cache@v4
@@ -44,28 +37,23 @@ jobs:
 
       - name: Create AVD
         run: |
-          echo "no" | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager" create avd -n "$AVD_NAME" -k "system-images;android-24;google_apis;x86_64" -d pixel
+          echo "no" | sdkmanager --create_avd -n "$AVD_NAME" -k "system-images;android-24;google_apis;x86_64" -d pixel
 
       - name: Build Custom Kernel
         run: |
-          # 克隆内核源代码
           git clone https://android.googlesource.com/kernel/goldfish/ -b android-goldfish-3.18
           cd goldfish
-          # 克隆工具链
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/x86/x86_64-linux-android-4.9 ../toolchain
           export PATH=$PATH:../toolchain/bin
           export ARCH=x86_64
           export CROSS_COMPILE=x86_64-linux-android-
-          # 配置并构建
           make x86_64_ranchu_defconfig
-          make -j$(nproc)  # 移除 menuconfig 以避免 CI 交互问题；如需自定义，用预设 .config
-          # 输出路径
+          make -j$(nproc)
           echo "KERNEL_PATH=$(pwd)/arch/x86/boot/bzImage" >> $GITHUB_ENV
 
       - name: Launch Emulator with Custom Kernel
         run: |
-          # 启动模拟器（headless 模式）
-          nohup "$ANDROID_SDK_ROOT/emulator/emulator" \
+          nohup $ANDROID_HOME/emulator/emulator \
             -avd "$AVD_NAME" \
             -kernel "$KERNEL_PATH" \
             -no-window \
@@ -75,10 +63,9 @@ jobs:
             -verbose \
             -show-kernel > emulator.log 2>&1 &
           EMULATOR_PID=$!
-          # 等待启动（使用 platform-tools/adb）
           timeout=300
           while [ $timeout -gt 0 ]; do
-            "$ANDROID_SDK_ROOT/platform-tools/adb" wait-for-device
+            $ANDROID_HOME/platform-tools/adb wait-for-device
             if [ $? -eq 0 ]; then
               echo "Emulator started successfully"
               break
@@ -91,16 +78,13 @@ jobs:
             cat emulator.log
             exit 1
           fi
-          # 测试：检查内核
-          "$ANDROID_SDK_ROOT/platform-tools/adb" shell getprop ro.build.version.release
-          "$ANDROID_SDK_ROOT/platform-tools/adb" shell uname -r
+          $ANDROID_HOME/platform-tools/adb shell getprop ro.build.version.release
+          $ANDROID_HOME/platform-tools/adb shell uname -r
 
       - name: Run Tests
         run: |
-          # 示例：运行 Gradle 测试（确保有 gradlew）
-          ./gradlew connectedCheck || true  # || true 避免非零退出影响
-          # 停止模拟器
-          "$ANDROID_SDK_ROOT/platform-tools/adb" -s emulator-5554 emu kill
+          ./gradlew connectedCheck || true
+          $ANDROID_HOME/platform-tools/adb -s emulator-5554 emu kill
 
       - name: Upload Logs
         if: always()
