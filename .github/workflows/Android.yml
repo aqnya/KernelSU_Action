@@ -37,7 +37,7 @@ jobs:
 
       - name: Create AVD
         run: |
-          echo "no" | sdkmanager --create_avd -n "$AVD_NAME" -k "system-images;android-24;google_apis;x86_64" -d pixel
+          echo "no" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n "$AVD_NAME" -k "system-images;android-24;google_apis;x86_64" -d pixel --force
 
       - name: Build Custom Kernel
         run: |
@@ -53,7 +53,7 @@ jobs:
 
       - name: Launch Emulator with Custom Kernel
         run: |
-          nohup $ANDROID_HOME/emulator/emulator \
+          nohup "$ANDROID_HOME/emulator/emulator" \
             -avd "$AVD_NAME" \
             -kernel "$KERNEL_PATH" \
             -no-window \
@@ -65,7 +65,7 @@ jobs:
           EMULATOR_PID=$!
           timeout=300
           while [ $timeout -gt 0 ]; do
-            $ANDROID_HOME/platform-tools/adb wait-for-device
+            "$ANDROID_HOME/platform-tools/adb" wait-for-device
             if [ $? -eq 0 ]; then
               echo "Emulator started successfully"
               break
@@ -78,13 +78,13 @@ jobs:
             cat emulator.log
             exit 1
           fi
-          $ANDROID_HOME/platform-tools/adb shell getprop ro.build.version.release
-          $ANDROID_HOME/platform-tools/adb shell uname -r
+          "$ANDROID_HOME/platform-tools/adb" shell getprop ro.build.version.release
+          "$ANDROID_HOME/platform-tools/adb" shell uname -r
 
       - name: Run Tests
         run: |
           ./gradlew connectedCheck || true
-          $ANDROID_HOME/platform-tools/adb -s emulator-5554 emu kill
+          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill
 
       - name: Upload Logs
         if: always()
