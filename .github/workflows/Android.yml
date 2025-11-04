@@ -1,4 +1,4 @@
-name: Custom Kernel Android Emulator with SDK Action
+name: Custom GKI Kernel Android 15 Emulator
 
 on: [push, pull_request]
 
@@ -7,6 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AVD_NAME: custom_avd
+      KERNEL_BRANCH: common-android15-6.1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,12 +21,15 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 24  # Android 7.0
-          target: google_apis  # 或 default
+          api-level: 35  # Android 15
+          target: google_apis
           arch: x86_64
-          components: platform-tools,emulator,system-images;android-24;google_apis;x86_64
-          ndk-version: 25.1.8937393  # 可选，如果需要 NDK
-          accept-licenses: true  # 自动接受许可
+          components: cmdline-tools;latest,platform-tools,emulator,system-images;android-35;google_apis;x86_64
+          accept-licenses: true
+
+      - name: Install System Image Explicitly
+        run: |
+          sdkmanager "system-images;android-35;google_apis;x86_64"
 
       - name: Cache AVD
         uses: actions/cache@v4
@@ -37,19 +41,26 @@ jobs:
 
       - name: Create AVD
         run: |
-          echo "no" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n "$AVD_NAME" -k "system-images;android-24;google_apis;x86_64" -d pixel --force
+          echo "no" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n "$AVD_NAME" -k "system-images;android-35;google_apis;x86_64" -d pixel --force --package "android-35"
 
-      - name: Build Custom Kernel
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Build Custom GKI Kernel
         run: |
-          git clone https://android.googlesource.com/kernel/goldfish/ -b android-goldfish-3.18
-          cd goldfish
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/x86/x86_64-linux-android-4.9 ../toolchain
-          export PATH=$PATH:../toolchain/bin
-          export ARCH=x86_64
-          export CROSS_COMPILE=x86_64-linux-android-
-          make x86_64_ranchu_defconfig
-          make -j$(nproc)
-          echo "KERNEL_PATH=$(pwd)/arch/x86/boot/bzImage" >> $GITHUB_ENV
+          # 安装 repo 工具
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          export PATH=~/bin:$PATH
+          # 克隆内核源代码
+          mkdir kernel && cd kernel
+          repo init -u https://android.googlesource.com/kernel/manifest -b "$KERNEL_BRANCH"
+          repo sync -j$(nproc) -c -f --force-sync
+          # 构建 virtual_device_x86_64（GKI 内核）
+          tools/bazel run //common-modules/virtual-device:virtual_device_x86_64_dist -- --destdir=out
+          # 输出路径（bzImage 为 x86_64 内核镜像）
+          echo "KERNEL_PATH=$(pwd)/out/virtual_device_x86_64/dist/bzImage" >> $GITHUB_ENV
 
       - name: Launch Emulator with Custom Kernel
         run: |
@@ -78,8 +89,8 @@ jobs:
             cat emulator.log
             exit 1
           fi
-          "$ANDROID_HOME/platform-tools/adb" shell getprop ro.build.version.release
-          "$ANDROID_HOME/platform-tools/adb" shell uname -r
+          "$ANDROID_HOME/platform-tools/adb" shell getprop ro.build.version.release  # 应输出 15
+          "$ANDROID_HOME/platform-tools/adb" shell uname -r  # 显示自定义 GKI 内核版本
 
       - name: Run Tests
         run: |
