@@ -1,340 +1,50 @@
-name: Custom GKI Kernel Android 15 Emulator
-
-on: [push, pull_request, workflow_dispatch]
+name: CI with Custom Kernel
+on: [push, pull_request]
 
 jobs:
-  test:
+  build-kernel:
     runs-on: ubuntu-latest
-    env:
-      AVD_NAME: custom_avd
-      KERNEL_BRANCH: common-android-mainline
-    timeout-minutes: 60
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Remove unused packages
-        uses: jlumbroso/free-disk-space@main
-        with:
-           tool-cache: true
-           android: false
-           dotnet: true
-           haskell: true
-           large-packages: true
-           docker-images: true
-           swap-storage: false
+    - uses: actions/checkout@v4
+    - name: Install build tools
+      run: |
+        sudo apt update
+        sudo apt install -y git make gcc bc bison flex libssl-dev
+    - name: Clone and build kernel
+      run: |
+        git clone https://android.googlesource.com/kernel/common -b android-14.0.0_r1
+        cd common
+        make ARCH=x86_64 goldfish_defconfig
+        # 自定义配置（这里简化，实际用 sed 或 echo 编辑 .config）
+        echo "CONFIG_DEBUG_KERNEL=y" >> .config
+        make ARCH=x86_64 CROSS_COMPILE=x86_64-linux-android- -j$(nproc)
+        mkdir -p kernel-out
+        cp arch/x86/boot/vmlinux kernel-out/
+    - name: Upload kernel artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: custom-kernel
+        path: kernel-out/vmlinux
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          components: cmdline-tools;latest,platform-tools,emulator,system-images;android-35;google_apis;x86_64
-          accept-licenses: true
-
-      - name: Install System Image Explicitly
-        run: |
-          sdkmanager "system-images;android-35;google_apis;x86_64"
-
-      - name: Create AVD
-        run: |
-          echo "=== 创建 Android 配置目录 ==="
-          mkdir -p ~/.android/avd
-          
-          echo "=== 检查系统镜像 ==="
-          ls -la "$ANDROID_HOME/system-images/android-35/google_apis/x86_64/" || {
-            echo "错误: 系统镜像不存在"
-            exit 1
-          }
-          
-          echo "=== 创建 AVD ==="
-          echo "no" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
-            -n "$AVD_NAME" \
-            -k "system-images;android-35;google_apis;x86_64" \
-            -d pixel \
-            --force \
-            -p ~/.android/avd/$AVD_NAME.avd
-          
-          # 检查 avdmanager 退出码
-          if [ $? -ne 0 ]; then
-            echo "错误: AVD 创建失败"
-            exit 1
-          fi
-          
-          echo "=== 验证 AVD 创建成功 ==="
-          if [ ! -f ~/.android/avd/$AVD_NAME.ini ]; then
-            echo "错误: AVD ini 文件未创建"
-            echo "尝试手动创建..."
-            
-            # 手动创建 AVD ini 文件
-            cat > ~/.android/avd/$AVD_NAME.ini << 'EOFINI'
-avd.ini.encoding=UTF-8
-path=$HOME/.android/avd/$AVD_NAME.avd
-path.rel=avd/$AVD_NAME.avd
-target=android-35
-EOFINI
-            
-            # 替换变量
-            sed -i "s|\$HOME|$HOME|g" ~/.android/avd/$AVD_NAME.ini
-            sed -i "s|\$AVD_NAME|$AVD_NAME|g" ~/.android/avd/$AVD_NAME.ini
-          fi
-          
-          # 手动创建 AVD config.ini（如果不存在）
-          if [ ! -f ~/.android/avd/$AVD_NAME.avd/config.ini ]; then
-            echo "创建 config.ini..."
-            mkdir -p ~/.android/avd/$AVD_NAME.avd
-            
-            cat > ~/.android/avd/$AVD_NAME.avd/config.ini << 'EOFCFG'
-avd.ini.encoding=UTF-8
-abi.type=x86_64
-hw.accelerometer=yes
-hw.audioInput=yes
-hw.battery=yes
-hw.camera.back=virtualscene
-hw.camera.front=emulated
-hw.cpu.ncore=2
-hw.device.name=pixel
-hw.dPad=no
-hw.gps=yes
-hw.keyboard=yes
-hw.lcd.density=420
-hw.lcd.height=1920
-hw.lcd.width=1080
-hw.ramSize=4096
-hw.sdCard=yes
-hw.sensors.orientation=yes
-hw.sensors.proximity=yes
-image.sysdir.1=system-images/android-35/google_apis/x86_64/
-tag.display=Google APIs
-tag.id=google_apis
-EOFCFG
-          fi
-          
-          echo "=== AVD 文件结构 ==="
-          ls -la ~/.android/avd/
-          ls -la ~/.android/avd/$AVD_NAME.avd/ || true
-          
-          echo "=== 列出所有 AVD ==="
-          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
-
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-        with:
-          bazelisk-version: v1.19.0
-
-      - name: Cache Kernel Source
-        uses: actions/cache@v4
-        with:
-          path: kernel
-          key: ${{ runner.os }}-kernel-${{ env.KERNEL_BRANCH }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-kernel-${{ env.KERNEL_BRANCH }}-
-            ${{ runner.os }}-kernel-
-
-      - name: Build Custom GKI Kernel
-        timeout-minutes: 35
-        run: |
-          # 安装 repo 工具
-          mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+x ~/bin/repo
-          export PATH=~/bin:$PATH
-          
-          # 克隆/同步内核源代码
-          mkdir -p kernel && cd kernel
-          if [ ! -d ".repo" ]; then
-            echo "初始化 repo..."
-            repo init -u https://android.googlesource.com/kernel/manifest.git -b common-android13-5.15-lts -m default.xml --depth=1
-            repo --trace sync -c --no-clone-bundle --no-tags --fail-fast -j16
-          else
-            echo "更新现有 repo..."
-            repo sync -j$(nproc) -c --no-tags
-          fi
-          
-          # 构建 GKI 内核
-          tools/bazel run //common-modules/virtual-device:virtual_device_x86_64_dist -- --destdir=out
-          
-          # 检查实际的输出目录结构
-          echo "=== 检查输出目录 ==="
-          ls -la out/ || echo "out/ 不存在"
-          
-          # 查找 bzImage 文件
-          BZIMAGE_PATH=$(find out -name "bzImage" -type f | head -n 1)
-          
-          if [ -z "$BZIMAGE_PATH" ]; then
-            echo "错误: 找不到 bzImage 文件"
-            echo "out/ 目录内容:"
-            find out -type f -name "*.img" -o -name "bzImage" -o -name "Image*"
-            exit 1
-          fi
-          
-          echo "找到内核镜像: $BZIMAGE_PATH"
-          echo "KERNEL_PATH=$(pwd)/$BZIMAGE_PATH" >> $GITHUB_ENV
-
-      - name: Enable KVM (重要：提升模拟器性能)
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Launch Emulator with Custom Kernel
-        timeout-minutes: 15
-        run: |
-          echo "使用内核: $KERNEL_PATH"
-          
-          # 验证内核文件存在
-          if [ ! -f "$KERNEL_PATH" ]; then
-            echo "错误: 内核文件不存在: $KERNEL_PATH"
-            exit 1
-          fi
-          
-          # 验证 AVD 存在
-          echo "=== 可用的 AVD 列表 ==="
-          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
-          
-          if [ ! -f "$HOME/.android/avd/$AVD_NAME.ini" ]; then
-            echo "错误: AVD 配置文件不存在"
-            echo "尝试列出 AVD 目录内容:"
-            ls -la ~/.android/avd/ || true
-            exit 1
-          fi
-          
-          # 确保 ADB 服务器启动
-          "$ANDROID_HOME/platform-tools/adb" start-server
-          "$ANDROID_HOME/platform-tools/adb" devices
-          
-          # 启动模拟器（增加详细日志）
-          nohup "$ANDROID_HOME/emulator/emulator" \
-            -avd "$AVD_NAME" \
-            -kernel "$KERNEL_PATH" \
-            -no-window \
-            -no-audio \
-            -gpu swiftshader_indirect \
-            -no-snapshot-load \
-            -no-boot-anim \
-            -memory 4096 \
-            -cores 2 \
-            -partition-size 4096 \
-            -verbose \
-            -show-kernel \
-            -qemu -m 4096 > emulator.log 2>&1 &
-          
-          EMU_PID=$!
-          echo "模拟器 PID: $EMU_PID"
-          
-          # 等待模拟器进程启动
-          sleep 10
-          
-          # 检查模拟器进程是否还在运行
-          if ! ps -p $EMU_PID > /dev/null; then
-            echo "错误: 模拟器进程已崩溃"
-            echo "=== 模拟器日志 ==="
-            cat emulator.log
-            exit 1
-          fi
-          
-          # 等待设备出现在 ADB 列表中（最多等待 5 分钟）
-          echo "等待设备连接到 ADB..."
-          TIMEOUT=300
-          ELAPSED=0
-          while [ $ELAPSED -lt $TIMEOUT ]; do
-            DEVICES=$("$ANDROID_HOME/platform-tools/adb" devices | grep -w "emulator" | wc -l)
-            if [ $DEVICES -gt 0 ]; then
-              echo "设备已连接到 ADB"
-              break
-            fi
-            echo "等待中... ($ELAPSED/$TIMEOUT 秒)"
-            sleep 5
-            ELAPSED=$((ELAPSED + 5))
-          done
-          
-          if [ $ELAPSED -ge $TIMEOUT ]; then
-            echo "错误: 设备连接超时"
-            echo "=== ADB 设备列表 ==="
-            "$ANDROID_HOME/platform-tools/adb" devices -l
-            echo "=== 模拟器日志 ==="
-            tail -n 100 emulator.log
-            exit 1
-          fi
-          
-          # 等待设备完全启动
-          echo "等待设备完全启动..."
-          "$ANDROID_HOME/platform-tools/adb" wait-for-device
-          
-          # 更健壮的启动完成检查
-          BOOT_TIMEOUT=300
-          BOOT_ELAPSED=0
-          while [ $BOOT_ELAPSED -lt $BOOT_TIMEOUT ]; do
-            BOOT_COMPLETED=$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-            if [ "$BOOT_COMPLETED" = "1" ]; then
-              echo "设备启动完成"
-              break
-            fi
-            echo "等待启动完成... ($BOOT_ELAPSED/$BOOT_TIMEOUT 秒)"
-            sleep 5
-            BOOT_ELAPSED=$((BOOT_ELAPSED + 5))
-          done
-          
-          if [ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]; then
-            echo "警告: 启动超时，但继续执行"
-          fi
-          
-          # 显示设备信息
-          echo "=== 设备信息 ==="
-          "$ANDROID_HOME/platform-tools/adb" devices -l
-          "$ANDROID_HOME/platform-tools/adb" shell getprop ro.build.version.release
-          "$ANDROID_HOME/platform-tools/adb" shell uname -r
-          
-          echo "模拟器启动成功"
-
-      - name: Run Tests
-        timeout-minutes: 10
-        run: |
-          # 验证 ADB 连接
-          "$ANDROID_HOME/platform-tools/adb" devices
-          
-          # 运行测试
-          ./gradlew connectedCheck || true
-
-      - name: Debug on Failure
-        if: failure()
-        run: |
-          echo "=== ADB 设备列表 ==="
-          "$ANDROID_HOME/platform-tools/adb" devices -l
-          
-          echo "=== 模拟器进程 ==="
-          ps aux | grep emulator || true
-          
-          echo "=== 最后 200 行模拟器日志 ==="
-          tail -n 200 emulator.log || true
-          
-          echo "=== ADB 服务器状态 ==="
-          "$ANDROID_HOME/platform-tools/adb" version
-          "$ANDROID_HOME/platform-tools/adb" kill-server
-          "$ANDROID_HOME/platform-tools/adb" start-server
-          "$ANDROID_HOME/platform-tools/adb" devices
-
-      - name: Stop Emulator
-        if: always()
-        run: |
-          "$ANDROID_HOME/platform-tools/adb" devices
-          "$ANDROID_HOME/platform-tools/adb" emu kill || true
-          sleep 5
-          pkill -9 qemu-system-x86_64 || true
-
-      - name: Upload Logs and Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            emulator.log
-            app/build/reports/androidTests/
-          retention-days: 7
+  test:
+    needs: build-kernel
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+    - uses: android-actions/setup-android@v3
+    - name: Download kernel
+      uses: actions/download-artifact@v4
+      with:
+        name: custom-kernel
+    - name: Run tests with custom kernel
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 30
+        target: google_apis
+        arch: x86_64
+        profile: pixel_5
+        emulator-options: -kernel ./vmlinux -no-snapshot-load -gpu swiftshader_indirect -no-audio -no-window
+        script: ./gradlew connectedAndroidTest
