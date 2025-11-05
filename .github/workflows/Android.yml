@@ -17,19 +17,16 @@ jobs:
 
     - name: Sync kernel source
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
         repo init -u https://android.googlesource.com/kernel/manifest.git -b common-android13-5.15-lts -m default.xml --depth=1
         repo --trace sync -c --no-clone-bundle --no-tags --fail-fast -j16
       
 
     - name: Setup FMAC
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/common
         curl -sSL https://raw.githubusercontent.com/FMAC-Team/FMAC/main/scripts/patch.sh | bash -
 
     - name: Build kernel
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/
         LTO=full CC=clang BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
   #    continue-on-error: true
         
@@ -37,7 +34,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
-        path: kernel_workspace/out/android13-5.15/dist/boot-img.tar.gz
+        path: out/android13-5.15/dist/boot-img.tar.gz
 
   test:
     needs: build-kernel
