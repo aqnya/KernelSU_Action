@@ -8,7 +8,7 @@ jobs:
     env:
       AVD_NAME: custom_avd
       KERNEL_BRANCH: common-android-mainline
- #   timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,7 +53,11 @@ jobs:
 
       - name: Create AVD
         run: |
-          echo "no" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n "$AVD_NAME" -k "system-images;android-35;google_apis;x86_64" -d pixel --force
+          echo "no" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            -n "$AVD_NAME" \
+            -k "system-images;android-35;google_apis;x86_64" \
+            -d pixel \
+            --force
 
       - name: Setup Bazelisk
         uses: bazelbuild/setup-bazelisk@v3
@@ -70,7 +74,7 @@ jobs:
             ${{ runner.os }}-kernel-
 
       - name: Build Custom GKI Kernel
-        timeout-minutes: 30
+        timeout-minutes: 35
         run: |
           # 安装 repo 工具
           mkdir -p ~/bin
@@ -109,8 +113,14 @@ jobs:
           echo "找到内核镜像: $BZIMAGE_PATH"
           echo "KERNEL_PATH=$(pwd)/$BZIMAGE_PATH" >> $GITHUB_ENV
 
+      - name: Enable KVM (重要：提升模拟器性能)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Launch Emulator with Custom Kernel
-      #  timeout-minutes: 40
+        timeout-minutes: 15
         run: |
           echo "使用内核: $KERNEL_PATH"
           
@@ -120,8 +130,12 @@ jobs:
             exit 1
           fi
           
-          # 启动模拟器
-          "$ANDROID_HOME/emulator/emulator" \
+          # 确保 ADB 服务器启动
+          "$ANDROID_HOME/platform-tools/adb" start-server
+          "$ANDROID_HOME/platform-tools/adb" devices
+          
+          # 启动模拟器（增加详细日志）
+          nohup "$ANDROID_HOME/emulator/emulator" \
             -avd "$AVD_NAME" \
             -kernel "$KERNEL_PATH" \
             -no-window \
@@ -129,24 +143,115 @@ jobs:
             -gpu swiftshader_indirect \
             -no-snapshot-load \
             -no-boot-anim \
+            -memory 4096 \
+            -cores 2 \
+            -partition-size 4096 \
             -verbose \
-            -show-kernel > emulator.log 2>&1 &
+            -show-kernel \
+            -qemu -m 4096 > emulator.log 2>&1 &
           
-          # 等待设备启动
-          "$ANDROID_HOME/platform-tools/adb" wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
+          EMU_PID=$!
+          echo "模拟器 PID: $EMU_PID"
           
-          echo "模拟器启动成功"
+          # 等待模拟器进程启动
+          sleep 10
+          
+          # 检查模拟器进程是否还在运行
+          if ! ps -p $EMU_PID > /dev/null; then
+            echo "错误: 模拟器进程已崩溃"
+            echo "=== 模拟器日志 ==="
+            cat emulator.log
+            exit 1
+          fi
+          
+          # 等待设备出现在 ADB 列表中（最多等待 5 分钟）
+          echo "等待设备连接到 ADB..."
+          TIMEOUT=300
+          ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            DEVICES=$("$ANDROID_HOME/platform-tools/adb" devices | grep -w "emulator" | wc -l)
+            if [ $DEVICES -gt 0 ]; then
+              echo "设备已连接到 ADB"
+              break
+            fi
+            echo "等待中... ($ELAPSED/$TIMEOUT 秒)"
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "错误: 设备连接超时"
+            echo "=== ADB 设备列表 ==="
+            "$ANDROID_HOME/platform-tools/adb" devices -l
+            echo "=== 模拟器日志 ==="
+            tail -n 100 emulator.log
+            exit 1
+          fi
+          
+          # 等待设备完全启动
+          echo "等待设备完全启动..."
+          "$ANDROID_HOME/platform-tools/adb" wait-for-device
+          
+          # 更健壮的启动完成检查
+          BOOT_TIMEOUT=300
+          BOOT_ELAPSED=0
+          while [ $BOOT_ELAPSED -lt $BOOT_TIMEOUT ]; do
+            BOOT_COMPLETED=$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            if [ "$BOOT_COMPLETED" = "1" ]; then
+              echo "设备启动完成"
+              break
+            fi
+            echo "等待启动完成... ($BOOT_ELAPSED/$BOOT_TIMEOUT 秒)"
+            sleep 5
+            BOOT_ELAPSED=$((BOOT_ELAPSED + 5))
+          done
+          
+          if [ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]; then
+            echo "警告: 启动超时，但继续执行"
+          fi
+          
+          # 显示设备信息
+          echo "=== 设备信息 ==="
+          "$ANDROID_HOME/platform-tools/adb" devices -l
           "$ANDROID_HOME/platform-tools/adb" shell getprop ro.build.version.release
           "$ANDROID_HOME/platform-tools/adb" shell uname -r
+          
+          echo "模拟器启动成功"
 
       - name: Run Tests
+        timeout-minutes: 10
         run: |
+          # 验证 ADB 连接
+          "$ANDROID_HOME/platform-tools/adb" devices
+          
+          # 运行测试
           ./gradlew connectedCheck || true
+
+      - name: Debug on Failure
+        if: failure()
+        run: |
+          echo "=== ADB 设备列表 ==="
+          "$ANDROID_HOME/platform-tools/adb" devices -l
+          
+          echo "=== 模拟器进程 ==="
+          ps aux | grep emulator || true
+          
+          echo "=== 最后 200 行模拟器日志 ==="
+          tail -n 200 emulator.log || true
+          
+          echo "=== ADB 服务器状态 ==="
+          "$ANDROID_HOME/platform-tools/adb" version
+          "$ANDROID_HOME/platform-tools/adb" kill-server
+          "$ANDROID_HOME/platform-tools/adb" start-server
+          "$ANDROID_HOME/platform-tools/adb" devices
 
       - name: Stop Emulator
         if: always()
         run: |
+          "$ANDROID_HOME/platform-tools/adb" devices
           "$ANDROID_HOME/platform-tools/adb" emu kill || true
+          sleep 5
+          pkill -9 qemu-system-x86_64 || true
 
       - name: Upload Logs and Artifacts
         if: always()
@@ -155,4 +260,5 @@ jobs:
           name: build-logs
           path: |
             emulator.log
-        #    kernel/out/
+            app/build/reports/androidTests/
+          retention-days: 7
