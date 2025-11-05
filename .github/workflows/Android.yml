@@ -170,6 +170,12 @@ jobs:
         echo "KERNEL_FILE=$KERNEL_FILE" >> $GITHUB_ENV
         echo "Will use kernel: $KERNEL_FILE"
 
+    - name: Enable KVM group perms
+      run: |
+       echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+       sudo udevadm control --reload-rules
+       sudo udevadm trigger --name-match=kvm
+
     - name: Run emulator with custom kernel
       uses: reactivecircus/android-emulator-runner@v2
       with:
