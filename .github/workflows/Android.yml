@@ -134,4 +134,4 @@ jobs:
           name: build-logs
           path: |
             emulator.log
-            kernel/bazel-*
+         #   kernel/bazel-*
