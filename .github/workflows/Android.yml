@@ -1,4 +1,4 @@
-name: CI with Custom Kernel
+name: CI with Android 13 LTS Kernel
 on: [push, pull_request]
 
 jobs:
@@ -6,25 +6,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Install build tools
+    - name: Install build dependencies
       run: |
         sudo apt update
         sudo apt install -y git make gcc bc bison flex libssl-dev
-    - name: Clone and build kernel
+    - name: Clone and build Android 13 LTS kernel
       run: |
-        git clone https://android.googlesource.com/kernel/common -b android-14.0.0_r1
+        git clone https://android.googlesource.com/kernel/common -b common-android13-5.15-lts
         cd common
         make ARCH=x86_64 goldfish_defconfig
-        # 自定义配置（这里简化，实际用 sed 或 echo 编辑 .config）
+        # 自定义配置
         echo "CONFIG_DEBUG_KERNEL=y" >> .config
-        make ARCH=x86_64 CROSS_COMPILE=x86_64-linux-android- -j$(nproc)
+        echo "CONFIG_KASAN=y" >> .config
+        # 构建（简化 CROSS_COMPILE，实际需 NDK；这里用系统 gcc）
+        make ARCH=x86_64 CC=clang LD=ld.lld -j$(nproc)
         mkdir -p kernel-out
         cp arch/x86/boot/vmlinux kernel-out/
     - name: Upload kernel artifact
       uses: actions/upload-artifact@v4
       with:
-        name: custom-kernel
+        name: android13-lts-kernel
         path: kernel-out/vmlinux
+        retention-days: 1
 
   test:
     needs: build-kernel
@@ -34,17 +37,18 @@ jobs:
     - uses: actions/setup-java@v4
       with:
         java-version: '17'
+        distribution: 'temurin'
     - uses: android-actions/setup-android@v3
     - name: Download kernel
       uses: actions/download-artifact@v4
       with:
-        name: custom-kernel
-    - name: Run tests with custom kernel
+        name: android13-lts-kernel
+    - name: Run emulator tests with custom kernel
       uses: reactivecircus/android-emulator-runner@v2
       with:
-        api-level: 30
+        api-level: 33  # Android 13
         target: google_apis
         arch: x86_64
         profile: pixel_5
-        emulator-options: -kernel ./vmlinux -no-snapshot-load -gpu swiftshader_indirect -no-audio -no-window
+        emulator-options: -kernel ./vmlinux -no-snapshot-load -no-snapshot-save -gpu swiftshader_indirect -no-audio -no-window -partition-size 32768M
         script: ./gradlew connectedAndroidTest
