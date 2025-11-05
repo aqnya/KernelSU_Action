@@ -10,24 +10,34 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y git make gcc bc bison flex libssl-dev
-    - name: Clone and build Android 13 LTS kernel
+    - name: Setup repo
       run: |
-        git clone https://android.googlesource.com/kernel/common -b common-android13-5.15-lts
-        cd common
-        make ARCH=x86_64 goldfish_defconfig
-        # 自定义配置
-        echo "CONFIG_DEBUG_KERNEL=y" >> .config
-        echo "CONFIG_KASAN=y" >> .config
-        # 构建（简化 CROSS_COMPILE，实际需 NDK；这里用系统 gcc）
-        make ARCH=x86_64 CC=clang LD=ld.lld -j$(nproc)
-        mkdir -p kernel-out
-        cp arch/x86/boot/vmlinux kernel-out/
-    - name: Upload kernel artifact
+        sudo curl https://storage.googleapis.com/git-repo-downloads/repo -o /bin/repo
+        sudo chmod +x /bin/repo
+
+    - name: Sync kernel source
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        repo init -u https://android.googlesource.com/kernel/manifest.git -b common-android13-5.15-lts -m default.xml --depth=1
+        repo --trace sync -c --no-clone-bundle --no-tags --fail-fast -j16
+      
+
+    - name: Setup FMAC
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/common
+        curl -sSL https://raw.githubusercontent.com/FMAC-Team/FMAC/main/scripts/patch.sh | bash -
+
+    - name: Build kernel
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/
+        LTO=full CC=clang BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+  #    continue-on-error: true
+        
+    - name: Upload boot image
       uses: actions/upload-artifact@v4
       with:
-        name: android13-lts-kernel
-        path: kernel-out/vmlinux
-        retention-days: 1
+        name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+        path: kernel_workspace/out/android13-5.15/dist/boot-img.tar.gz
 
   test:
     needs: build-kernel
