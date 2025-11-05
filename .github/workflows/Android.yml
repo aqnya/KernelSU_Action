@@ -62,7 +62,7 @@ jobs:
 
     - name: Setup FMAC
       run: |
-        cd ${{ github.workspace }}/kernel-src
+        cd ${{ github.workspace }}/kernel-src/common
         if curl -sSL https://raw.githubusercontent.com/FMAC-Team/FMAC/main/scripts/patch.sh | bash -; then
           echo "✅ FMAC applied successfully"
         else
