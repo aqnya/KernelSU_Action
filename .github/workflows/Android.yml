@@ -8,7 +8,7 @@ jobs:
     env:
       AVD_NAME: custom_avd
       KERNEL_BRANCH: common-android-mainline
-    timeout-minutes: 45
+ #   timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -110,7 +110,7 @@ jobs:
           echo "KERNEL_PATH=$(pwd)/$BZIMAGE_PATH" >> $GITHUB_ENV
 
       - name: Launch Emulator with Custom Kernel
-        timeout-minutes: 40
+      #  timeout-minutes: 40
         run: |
           echo "使用内核: $KERNEL_PATH"
           
