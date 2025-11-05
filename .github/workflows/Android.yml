@@ -1,6 +1,6 @@
 name: Custom GKI Kernel Android 15 Emulator
 
-on: [push, pull_request,workflow_dispatch]
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   test:
@@ -92,13 +92,34 @@ jobs:
           # 构建 GKI 内核
           tools/bazel run //common-modules/virtual-device:virtual_device_x86_64_dist -- --destdir=out
           
-          # 检查输出
-          ls -la out/virtual_device_x86_64/dist/
-          echo "KERNEL_PATH=$(pwd)/out/virtual_device_x86_64/dist/bzImage" >> $GITHUB_ENV
+          # 检查实际的输出目录结构
+          echo "=== 检查输出目录 ==="
+          ls -la out/ || echo "out/ 不存在"
+          
+          # 查找 bzImage 文件
+          BZIMAGE_PATH=$(find out -name "bzImage" -type f | head -n 1)
+          
+          if [ -z "$BZIMAGE_PATH" ]; then
+            echo "错误: 找不到 bzImage 文件"
+            echo "out/ 目录内容:"
+            find out -type f -name "*.img" -o -name "bzImage" -o -name "Image*"
+            exit 1
+          fi
+          
+          echo "找到内核镜像: $BZIMAGE_PATH"
+          echo "KERNEL_PATH=$(pwd)/$BZIMAGE_PATH" >> $GITHUB_ENV
 
       - name: Launch Emulator with Custom Kernel
         timeout-minutes: 10
         run: |
+          echo "使用内核: $KERNEL_PATH"
+          
+          # 验证内核文件存在
+          if [ ! -f "$KERNEL_PATH" ]; then
+            echo "错误: 内核文件不存在: $KERNEL_PATH"
+            exit 1
+          fi
+          
           # 启动模拟器
           "$ANDROID_HOME/emulator/emulator" \
             -avd "$AVD_NAME" \
@@ -134,4 +155,4 @@ jobs:
           name: build-logs
           path: |
             emulator.log
-         #   kernel/bazel-*
+        #    kernel/out/
