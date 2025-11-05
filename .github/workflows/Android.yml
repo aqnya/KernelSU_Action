@@ -43,21 +43,21 @@ jobs:
         run: |
           sdkmanager "system-images;android-35;google_apis;x86_64"
 
-      - name: Cache AVD
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: ${{ runner.os }}-avd-${{ env.AVD_NAME }}-35
-
       - name: Create AVD
         run: |
+          echo "=== 检查 Android 目录 ==="
+          ls -la ~/.android/ || true
+          
+          echo "=== 创建 AVD ==="
           echo "no" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
             -n "$AVD_NAME" \
             -k "system-images;android-35;google_apis;x86_64" \
             -d pixel \
             --force
+          
+          echo "=== 验证 AVD 创建成功 ==="
+          ls -la ~/.android/avd/
+          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
 
       - name: Setup Bazelisk
         uses: bazelbuild/setup-bazelisk@v3
@@ -127,6 +127,17 @@ jobs:
           # 验证内核文件存在
           if [ ! -f "$KERNEL_PATH" ]; then
             echo "错误: 内核文件不存在: $KERNEL_PATH"
+            exit 1
+          fi
+          
+          # 验证 AVD 存在
+          echo "=== 可用的 AVD 列表 ==="
+          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
+          
+          if [ ! -f "$HOME/.android/avd/$AVD_NAME.ini" ]; then
+            echo "错误: AVD 配置文件不存在"
+            echo "尝试列出 AVD 目录内容:"
+            ls -la ~/.android/avd/ || true
             exit 1
           fi
           
