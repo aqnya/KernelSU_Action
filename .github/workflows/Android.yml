@@ -1,5 +1,5 @@
 name: CI with Android 13 LTS Kernel
-on: [push, pull_request]
+on: [push, pull_request,workflow_dispatch]
 
 jobs:
   build-kernel:
