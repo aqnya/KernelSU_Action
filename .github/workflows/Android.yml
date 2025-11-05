@@ -45,18 +45,79 @@ jobs:
 
       - name: Create AVD
         run: |
-          echo "=== 检查 Android 目录 ==="
-          ls -la ~/.android/ || true
+          echo "=== 创建 Android 配置目录 ==="
+          mkdir -p ~/.android/avd
+          
+          echo "=== 检查系统镜像 ==="
+          ls -la "$ANDROID_HOME/system-images/android-35/google_apis/x86_64/" || {
+            echo "错误: 系统镜像不存在"
+            exit 1
+          }
           
           echo "=== 创建 AVD ==="
           echo "no" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
             -n "$AVD_NAME" \
             -k "system-images;android-35;google_apis;x86_64" \
             -d pixel \
-            --force
+            --force \
+            -p ~/.android/avd/$AVD_NAME.avd
+          
+          # 检查 avdmanager 退出码
+          if [ $? -ne 0 ]; then
+            echo "错误: AVD 创建失败"
+            exit 1
+          fi
           
           echo "=== 验证 AVD 创建成功 ==="
+          if [ ! -f ~/.android/avd/$AVD_NAME.ini ]; then
+            echo "错误: AVD ini 文件未创建"
+            echo "尝试手动创建..."
+            
+            # 手动创建 AVD ini 文件
+            cat > ~/.android/avd/$AVD_NAME.ini << EOF
+avd.ini.encoding=UTF-8
+path=$HOME/.android/avd/$AVD_NAME.avd
+path.rel=avd/$AVD_NAME.avd
+target=android-35
+EOF
+          fi
+          
+          # 手动创建 AVD config.ini（如果不存在）
+          if [ ! -f ~/.android/avd/$AVD_NAME.avd/config.ini ]; then
+            echo "创建 config.ini..."
+            mkdir -p ~/.android/avd/$AVD_NAME.avd
+            
+            cat > ~/.android/avd/$AVD_NAME.avd/config.ini << EOF
+avd.ini.encoding=UTF-8
+abi.type=x86_64
+hw.accelerometer=yes
+hw.audioInput=yes
+hw.battery=yes
+hw.camera.back=virtualscene
+hw.camera.front=emulated
+hw.cpu.ncore=2
+hw.device.name=pixel
+hw.dPad=no
+hw.gps=yes
+hw.keyboard=yes
+hw.lcd.density=420
+hw.lcd.height=1920
+hw.lcd.width=1080
+hw.ramSize=4096
+hw.sdCard=yes
+hw.sensors.orientation=yes
+hw.sensors.proximity=yes
+image.sysdir.1=system-images/android-35/google_apis/x86_64/
+tag.display=Google APIs
+tag.id=google_apis
+EOF
+          fi
+          
+          echo "=== AVD 文件结构 ==="
           ls -la ~/.android/avd/
+          ls -la ~/.android/avd/$AVD_NAME.avd/ || true
+          
+          echo "=== 列出所有 AVD ==="
           "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
 
       - name: Setup Bazelisk
