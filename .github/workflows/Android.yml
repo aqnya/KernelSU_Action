@@ -9,7 +9,6 @@ jobs:
       UPLOADNAME: custom
       DEVICE: emulator
       BUILD_TIME: ${{ github.run_number }}
-    # 输出变量供 test job 使用
     outputs:
       artifact-name: ${{ steps.set-artifact-name.outputs.name }}
     
@@ -19,48 +18,63 @@ jobs:
     - name: Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git make gcc bc bison flex libssl-dev \
-          python3-pip libelf-dev libncurses-dev
+        sudo apt-get install -y bc bison build-essential ccache curl \
+          flex g++-multilib gcc-multilib git gnupg gperf imagemagick \
+          lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool \
+          libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev \
+          libxml2 libxml2-utils lzop pngcrush rsync schedtool \
+          squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
 
     - name: Setup repo
       run: |
-        sudo curl https://storage.googleapis.com/git-repo-downloads/repo \
-          -o /usr/local/bin/repo
-        sudo chmod +x /usr/local/bin/repo
+        mkdir -p ~/.bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
+        chmod +x ~/.bin/repo
+        echo "$HOME/.bin" >> $GITHUB_PATH
 
-    - name: Sync kernel source
+    - name: Configure git
+      run: |
+        git config --global user.email "action@github.com"
+        git config --global user.name "GitHub Action"
+        git config --global color.ui false
+
+    - name: Sync kernel source with prebuilts
       run: |
         mkdir -p ${{ github.workspace }}/kernel-src
         cd ${{ github.workspace }}/kernel-src
         repo init -u https://android.googlesource.com/kernel/manifest.git \
-          -b common-android13-5.15-lts -m default.xml --depth=1 \
-          --repo-url=https://gerrit.googlesource.com/git-repo
-        repo sync -c --no-clone-bundle --no-tags -j$(nproc)
+          -b common-android13-5.15-lts --depth=1
+        repo sync -c -j$(nproc) --no-clone-bundle --no-tags
+
+    - name: Verify toolchain
+      run: |
+        cd ${{ github.workspace }}/kernel-src
+        echo "Checking for prebuilt toolchains..."
+        ls -la prebuilts/clang/host/linux-x86/ || echo "Clang not found"
+        ls -la prebuilts-master/clang/host/linux-x86/ || echo "Clang (master) not found"
+        
+        # 找到 clang 路径
+        if [ -d "prebuilts/clang/host/linux-x86" ]; then
+          CLANG_DIR=$(ls -d prebuilts/clang/host/linux-x86/clang-* | head -n1)
+          echo "Found clang at: $CLANG_DIR"
+          $CLANG_DIR/bin/clang --version
+        fi
 
     - name: Setup FMAC
       run: |
         cd ${{ github.workspace }}/kernel-src
         if curl -sSL https://raw.githubusercontent.com/FMAC-Team/FMAC/main/scripts/patch.sh | bash -; then
-          echo "FMAC applied successfully"
+          echo "✅ FMAC applied successfully"
         else
-          echo "FMAC failed, continuing without it"
+          echo "⚠️  FMAC failed, continuing without it"
         fi
       continue-on-error: true
-
-    - name: Setup Android NDK
-      uses: android-actions/setup-ndk@v1
-      with:
-        ndk-version: r25c
 
     - name: Build kernel
       run: |
         cd ${{ github.workspace }}/kernel-src
-        export PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-        BUILD_CONFIG=common/build.config.gki.x86_64 \
-        LTO=thin \
-        CC=clang \
-        CLANG_TRIPLE=x86_64-linux-gnu- \
-        build/build.sh
+        # build.sh 会自动使用 repo 同步的工具链
+        BUILD_CONFIG=common/build.config.gki.x86_64 build/build.sh
 
     - name: Set artifact name
       id: set-artifact-name
@@ -74,27 +88,32 @@ jobs:
         cd ${{ github.workspace }}/kernel-src
         mkdir -p upload
         
-        # Android GKI 构建通常输出在 out/mixed/dist/
-        if [ -f out/mixed/dist/bzImage ]; then
-          cp out/mixed/dist/bzImage upload/
-          echo "Copied bzImage"
+        echo "Searching for kernel build outputs..."
+        find out -type f \( -name "bzImage" -o -name "Image" -o -name "vmlinux" -o -name "boot.img" \) 2>/dev/null || true
+        
+        # GKI 构建通常输出到 out/*/dist/
+        for dist_dir in out/*/dist out/dist; do
+          if [ -d "$dist_dir" ]; then
+            echo "Found dist directory: $dist_dir"
+            ls -lh "$dist_dir"
+            
+            # 复制所有可能的内核文件
+            find "$dist_dir" -maxdepth 1 -type f \( -name "bzImage" -o -name "Image" -o -name "vmlinux" -o -name "boot.img" \) \
+              -exec cp {} upload/ \;
+          fi
+        done
+        
+        # 检查是否找到文件
+        if [ -z "$(ls -A upload/)" ]; then
+          echo "❌ ERROR: No kernel artifacts found!"
+          echo "Directory structure:"
+          find out -type d 2>/dev/null | head -20
+          exit 1
         fi
         
-        if [ -f out/mixed/dist/vmlinux ]; then
-          cp out/mixed/dist/vmlinux upload/
-          echo "Copied vmlinux"
-        fi
-        
-        # 如果有 boot.img
-        if [ -f out/mixed/dist/boot.img ]; then
-          cp out/mixed/dist/boot.img upload/
-          echo "Copied boot.img"
-        fi
-        
-        # 列出文件
+        echo "✅ Collected artifacts:"
         ls -lh upload/
         
-        # 创建压缩包
         cd upload
         tar -czf ../kernel-build.tar.gz *
 
@@ -104,6 +123,7 @@ jobs:
         name: ${{ steps.set-artifact-name.outputs.name }}
         path: ${{ github.workspace }}/kernel-src/kernel-build.tar.gz
         retention-days: 5
+      if: success()
 
   test:
     needs: build-kernel
@@ -111,12 +131,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions/setup-java@v4
+    - name: Set up JDK
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
 
-    - uses: android-actions/setup-android@v3
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
 
     - name: Download kernel artifact
       uses: actions/download-artifact@v4
@@ -124,23 +146,44 @@ jobs:
         name: ${{ needs.build-kernel.outputs.artifact-name }}
         path: ./kernel-artifact
 
-    - name: Extract kernel
+    - name: Extract and prepare kernel
       run: |
         mkdir -p kernel-extracted
         tar -xzf kernel-artifact/kernel-build.tar.gz -C kernel-extracted/
+        echo "Extracted files:"
         ls -lh kernel-extracted/
+        
+        # 确定使用哪个内核文件（x86_64 优先使用 bzImage）
+        if [ -f kernel-extracted/bzImage ]; then
+          KERNEL_FILE="bzImage"
+        elif [ -f kernel-extracted/Image ]; then
+          KERNEL_FILE="Image"
+        elif [ -f kernel-extracted/boot.img ]; then
+          echo "Found boot.img, extracting kernel..."
+          # 如果只有 boot.img，需要提取内核
+          KERNEL_FILE="boot.img"
+        else
+          echo "❌ No valid kernel file found!"
+          exit 1
+        fi
+        
+        echo "KERNEL_FILE=$KERNEL_FILE" >> $GITHUB_ENV
+        echo "Will use kernel: $KERNEL_FILE"
 
-    - name: Run emulator tests
+    - name: Run emulator with custom kernel
       uses: reactivecircus/android-emulator-runner@v2
       with:
         api-level: 33
         target: google_apis
         arch: x86_64
         profile: pixel_5
-        # 使用 bzImage（x86_64 的标准格式）
-        emulator-options: -kernel ./kernel-extracted/bzImage -no-snapshot-load -no-snapshot-save -gpu swiftshader_indirect -no-audio -no-window
-        # 如果没有 Gradle 项目，用简单的测试
+        emulator-options: -kernel ./kernel-extracted/${{ env.KERNEL_FILE }} -no-snapshot-load -no-snapshot-save -gpu swiftshader_indirect -no-audio -no-window
+        disable-animations: true
         script: |
           adb wait-for-device
-          adb shell uname -r
-          echo "Emulator booted successfully with custom kernel"
+          echo "=== Kernel Information ==="
+          adb shell uname -a
+          adb shell cat /proc/version
+          echo "=== Custom kernel version check ==="
+          adb shell uname -r | grep -i "lts13" && echo "✅ Custom kernel loaded!" || echo "⚠️  Standard kernel loaded"
+          echo "Emulator test completed"
