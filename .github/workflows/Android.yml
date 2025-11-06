@@ -72,7 +72,7 @@ jobs:
     - name: Build kernel
       run: |
         cd ${{ github.workspace }}/kernel-src
-        BUILD_CONFIG=common-modules/virtual-device/build.config.virtual_device.x86_64  FRAGMENT_CONFIG=common/arch/x86/configs/gki_defconfig  build/config.sh
+        tools/bazel run --verbose_failures --config=android_ci   //common-modules/virtual-device:virtual_device_x86_64_dist -- --flat
 
 
     - name: Set artifact name
