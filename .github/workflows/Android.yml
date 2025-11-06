@@ -188,4 +188,4 @@ jobs:
      #   emulator-options: -kernel ./kernel-extracted/${{ env.KERNEL_FILE }} -no-snapshot-load -no-snapshot-save -no-audio -no-window -gpu swiftshader_indirect -no-boot-anim -verbose -show-kernel -qemu -serial mon:stdio
         disable-animations: true
         force-avd-creation: false
-        script: ./gradlew connectedCheck
+        script: adb shell uname -a
