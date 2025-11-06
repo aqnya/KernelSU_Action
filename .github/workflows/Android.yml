@@ -72,7 +72,7 @@ jobs:
     - name: Build kernel
       run: |
         cd ${{ github.workspace }}/kernel-src
-        tools/bazel run --config=fast --config=stamp --lto=none //common-modules/virtual-device:virtual_device_x86_64_dist --
+        tools/bazel run --config=fast --lto=none //common-modules/virtual-device:virtual_device_x86_64_dist --
 
 
     - name: Set artifact name
