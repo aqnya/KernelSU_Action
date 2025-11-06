@@ -185,7 +185,7 @@ jobs:
         disk-size: 8192M
         heap-size: 512M
         emulator-boot-timeout: 900
-     #   emulator-options: -kernel ./kernel-extracted/${{ env.KERNEL_FILE }} -no-snapshot-load -no-snapshot-save -no-audio -no-window -gpu swiftshader_indirect -no-boot-anim -verbose -show-kernel -qemu -serial mon:stdio
+        emulator-options: -kernel ./kernel-extracted/${{ env.KERNEL_FILE }} #-no-snapshot-load -no-snapshot-save -no-audio -no-window -gpu swiftshader_indirect -no-boot-anim -verbose -show-kernel -qemu -serial mon:stdio
         disable-animations: true
         force-avd-creation: false
         script: adb shell uname -a
