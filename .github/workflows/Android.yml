@@ -43,7 +43,7 @@ jobs:
         mkdir -p ${{ github.workspace }}/kernel-src
         cd ${{ github.workspace }}/kernel-src
         repo init -u https://android.googlesource.com/kernel/manifest.git \
-          -b common-android13-5.15-2025-09 --depth=1
+          -b common-android13-5.15 --depth=1
         repo sync -c -j$(nproc) --no-clone-bundle --no-tags
 
     - name: Verify toolchain
@@ -59,12 +59,6 @@ jobs:
           $CLANG_DIR/bin/clang --version
         fi
 
-    - name: Setup KernelSU
-      run: |
-        cd ${{ github.workspace }}/kernel-src/common
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-      continue-on-error: true
-
     - name: Setup FMAC
       run: |
         cd ${{ github.workspace }}/kernel-src/common
@@ -79,6 +73,8 @@ jobs:
       run: |
         cd ${{ github.workspace }}/kernel-src
         BUILD_CONFIG=common/build.config.gki.x86_64 build/build.sh
+        BUILD_CONFIG=common-modules/virtual-device/build.config.goldfish.x86_64
+        build/build.sh
 
     - name: Set artifact name
       id: set-artifact-name
