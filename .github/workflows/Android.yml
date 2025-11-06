@@ -43,7 +43,7 @@ jobs:
         mkdir -p ${{ github.workspace }}/kernel-src
         cd ${{ github.workspace }}/kernel-src
         repo init -u https://android.googlesource.com/kernel/manifest.git \
-          -b common-android13-5.15-lts --depth=1
+          -b common-android13-5.15-2025-09 --depth=1
         repo sync -c -j$(nproc) --no-clone-bundle --no-tags
 
     - name: Verify toolchain
