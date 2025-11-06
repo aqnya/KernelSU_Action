@@ -1,5 +1,5 @@
 name: CI with Android 13 LTS Kernel
-on: [push, pull_request,workflow_dispatch]
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   build-kernel:
@@ -53,12 +53,17 @@ jobs:
         ls -la prebuilts/clang/host/linux-x86/ || echo "Clang not found"
         ls -la prebuilts-master/clang/host/linux-x86/ || echo "Clang (master) not found"
         
-        # 找到 clang 路径
         if [ -d "prebuilts/clang/host/linux-x86" ]; then
           CLANG_DIR=$(ls -d prebuilts/clang/host/linux-x86/clang-* | head -n1)
           echo "Found clang at: $CLANG_DIR"
           $CLANG_DIR/bin/clang --version
         fi
+
+    - name: Setup KernelSU
+      run: |
+        cd ${{ github.workspace }}/kernel-src/common
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+      continue-on-error: true
 
     - name: Setup FMAC
       run: |
@@ -73,7 +78,6 @@ jobs:
     - name: Build kernel
       run: |
         cd ${{ github.workspace }}/kernel-src
-        # build.sh 会自动使用 repo 同步的工具链
         BUILD_CONFIG=common/build.config.gki.x86_64 build/build.sh
 
     - name: Set artifact name
@@ -89,21 +93,19 @@ jobs:
         mkdir -p upload
         
         echo "Searching for kernel build outputs..."
-        find out -type f \( -name "bzImage" -o -name "Image" -o -name "vmlinux" -o -name "boot.img" \) 2>/dev/null || true
         
-        # GKI 构建通常输出到 out/*/dist/
+        # GKI 构建输出目录
         for dist_dir in out/*/dist out/dist; do
           if [ -d "$dist_dir" ]; then
             echo "Found dist directory: $dist_dir"
             ls -lh "$dist_dir"
             
-            # 复制所有可能的内核文件
-            find "$dist_dir" -maxdepth 1 -type f \( -name "bzImage" -o -name "Image" -o -name "vmlinux" -o -name "boot.img" \) \
+            # 复制内核文件
+            find "$dist_dir" -maxdepth 1 -type f \( -name "bzImage" -o -name "Image" -o -name "vmlinux" \) \
               -exec cp {} upload/ \;
           fi
         done
         
-        # 检查是否找到文件
         if [ -z "$(ls -A upload/)" ]; then
           echo "❌ ERROR: No kernel artifacts found!"
           echo "Directory structure:"
@@ -123,11 +125,12 @@ jobs:
         name: ${{ steps.set-artifact-name.outputs.name }}
         path: ${{ github.workspace }}/kernel-src/kernel-build.tar.gz
         retention-days: 5
-      if: success()
 
   test:
     needs: build-kernel
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
     steps:
     - uses: actions/checkout@v4
 
@@ -139,6 +142,12 @@ jobs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+
+    - name: Enable KVM group perms
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
 
     - name: Download kernel artifact
       uses: actions/download-artifact@v4
@@ -153,43 +162,53 @@ jobs:
         echo "Extracted files:"
         ls -lh kernel-extracted/
         
-        # 确定使用哪个内核文件（x86_64 优先使用 bzImage）
+        # x86_64 使用 bzImage
         if [ -f kernel-extracted/bzImage ]; then
-          KERNEL_FILE="bzImage"
+          echo "KERNEL_FILE=bzImage" >> $GITHUB_ENV
+          echo "✅ Found bzImage"
         elif [ -f kernel-extracted/Image ]; then
-          KERNEL_FILE="Image"
-        elif [ -f kernel-extracted/boot.img ]; then
-          echo "Found boot.img, extracting kernel..."
-          # 如果只有 boot.img，需要提取内核
-          KERNEL_FILE="boot.img"
+          echo "KERNEL_FILE=Image" >> $GITHUB_ENV
+          echo "✅ Found Image"
         else
           echo "❌ No valid kernel file found!"
           exit 1
         fi
-        
-        echo "KERNEL_FILE=$KERNEL_FILE" >> $GITHUB_ENV
-        echo "Will use kernel: $KERNEL_FILE"
-
-    - name: Enable KVM group perms
-      run: |
-       echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-       sudo udevadm control --reload-rules
-       sudo udevadm trigger --name-match=kvm
 
     - name: Run emulator with custom kernel
       uses: reactivecircus/android-emulator-runner@v2
+      timeout-minutes: 20
       with:
         api-level: 33
         target: google_apis
         arch: x86_64
-        profile: pixel_5
-        emulator-options: -kernel ./kernel-extracted/${{ env.KERNEL_FILE }} -no-snapshot-load -no-snapshot-save -gpu swiftshader_indirect -no-audio -no-window
+        ram-size: 4096M
+        disk-size: 8192M
+        heap-size: 512M
+        emulator-boot-timeout: 900
+        emulator-options: -kernel ./kernel-extracted/${{ env.KERNEL_FILE }} -no-snapshot-load -no-snapshot-save -no-audio -no-window -gpu swiftshader_indirect -no-boot-anim -verbose -show-kernel -qemu -serial mon:stdio
         disable-animations: true
+        force-avd-creation: false
         script: |
-          adb wait-for-device
+          echo "=== Waiting for device ==="
+          adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
+          
+          echo "=== Device Information ==="
+          adb shell getprop ro.build.version.release
+          adb shell getprop ro.build.version.sdk
+          
           echo "=== Kernel Information ==="
           adb shell uname -a
           adb shell cat /proc/version
+          
           echo "=== Custom kernel version check ==="
-          adb shell uname -r | grep -i "lts13" && echo "✅ Custom kernel loaded!" || echo "⚠️  Standard kernel loaded"
-          echo "Emulator test completed"
+          if adb shell uname -r | grep -i "lts13"; then
+            echo "✅ Custom kernel loaded successfully!"
+          else
+            echo "⚠️  Standard kernel loaded (custom kernel may not be compatible)"
+            adb shell uname -r
+          fi
+          
+          echo "=== KernelSU Check ==="
+          adb shell su --version 2>/dev/null || echo "KernelSU not available"
+          
+          echo "✅ Emulator test completed"
