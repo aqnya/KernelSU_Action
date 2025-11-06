@@ -73,8 +73,7 @@ jobs:
       run: |
         cd ${{ github.workspace }}/kernel-src
         BUILD_CONFIG=common/build.config.gki.x86_64 build/build.sh
-        BUILD_CONFIG=common-modules/virtual-device/build.config.goldfish.x86_64
-        build/build.sh
+        BUILD_CONFIG=common-modules/virtual-device/build.config.goldfish.x86_64  build/build.sh
 
     - name: Set artifact name
       id: set-artifact-name
