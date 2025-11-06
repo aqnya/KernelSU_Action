@@ -72,8 +72,7 @@ jobs:
     - name: Build kernel
       run: |
         cd ${{ github.workspace }}/kernel-src
-        sed -i -e 's/^CONFIG_MODVERSIONS=y$/# CONFIG_MODVERSIONS is not set/' -e 's/^CONFIG_MODULE_SIG=y$/# CONFIG_MODULE_SIG is not set/' defconfig
-        tools/bazel run --verbose_failures --config=android_ci   //common-modules/virtual-device:virtual_device_x86_64_dist -- --flat
+        tools/bazel run --config=fast --config=stamp --lto=none //common-modules/virtual-device:virtual_device_x86_64_dist --
 
 
     - name: Set artifact name
