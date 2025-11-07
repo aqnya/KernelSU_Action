@@ -252,22 +252,22 @@ jobs:
         fi
         
         # Create init script to load modules
-        cat > init << 'EOF'
-#!/system/bin/sh
-
-# Load kernel modules
-if [ -d /lib/modules ]; then
-  for module in /lib/modules/*/*.ko; do
-    if [ -f "$module" ]; then
-      echo "Loading module: $module"
-      insmod "$module" 2>&1 | tee -a /dev/kmsg
-    fi
-  done
-fi
-
-# Continue with normal init
-exec /system/bin/init "$@"
-EOF
+        cat > init << 'EOFMARKER'
+        #!/system/bin/sh
+        
+        # Load kernel modules
+        if [ -d /lib/modules ]; then
+          for module in /lib/modules/*/*.ko; do
+            if [ -f "$module" ]; then
+              echo "Loading module: $module"
+              insmod "$module" 2>&1 | tee -a /dev/kmsg
+            fi
+          done
+        fi
+        
+        # Continue with normal init
+        exec /system/bin/init "$@"
+        EOFMARKER
         chmod +x init
         
         # Create ramdisk image
