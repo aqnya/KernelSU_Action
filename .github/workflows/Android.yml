@@ -54,7 +54,7 @@ jobs:
         mkdir -p ${{ github.workspace }}/kernel-src
         cd ${{ github.workspace }}/kernel-src
         repo init -u https://android.googlesource.com/kernel/manifest.git \
-          -b common-android13-5.15 --depth=1
+          -b common-android15-6.6 --depth=1
         repo sync -c -j$(nproc) --no-clone-bundle --no-tags
 
     - name: Verify toolchain
@@ -232,62 +232,20 @@ jobs:
         else
           echo "⚠️  No modules directory found"
         fi
-
-    - name: Create custom ramdisk with modules
-      run: |
-        mkdir -p ramdisk
-        cd ramdisk
-        
-        # Create basic ramdisk structure
-        mkdir -p lib/modules system vendor data
-        
-        # Copy modules if they exist
-        if [ -d ../kernel-extracted/lib/modules ]; then
-          cp -r ../kernel-extracted/lib/modules/* lib/modules/
-          echo "✅ Copied modules to ramdisk"
-          
-          # List modules for verification
-          echo "=== Modules in ramdisk ==="
-          find lib/modules -name "*.ko" -ls
-        fi
-        
-        # Create init script to load modules
-        cat > init << 'EOFMARKER'
-        #!/system/bin/sh
-        
-        # Load kernel modules
-        if [ -d /lib/modules ]; then
-          for module in /lib/modules/*/*.ko; do
-            if [ -f "$module" ]; then
-              echo "Loading module: $module"
-              insmod "$module" 2>&1 | tee -a /dev/kmsg
-            fi
-          done
-        fi
-        
-        # Continue with normal init
-        exec /system/bin/init "$@"
-        EOFMARKER
-        chmod +x init
-        
-        # Create ramdisk image
-        find . | cpio -o -H newc | gzip > ../custom-ramdisk.img
-        
-        echo "✅ Custom ramdisk created with modules"
-        ls -lh ../custom-ramdisk.img
+   
 
     - name: Run emulator with custom kernel and modules
       uses: reactivecircus/android-emulator-runner@v2
       timeout-minutes: 20
       with:
-        api-level: 33
+        api-level: 35
         target: google_apis
         arch: x86_64
         ram-size: 4096M
         disk-size: 8192M
         heap-size: 512M
         emulator-boot-timeout: 900
-        emulator-options: -kernel ./kernel-extracted/${{ env.KERNEL_FILE }} -ramdisk ./custom-ramdisk.img -no-snapshot-load -no-snapshot-save -no-audio -no-window -gpu swiftshader_indirect -no-boot-anim -verbose -show-kernel
+        emulator-options: -kernel ./kernel-extracted/${{ env.KERNEL_FILE }} -no-snapshot-load -no-snapshot-save -no-audio -no-window -gpu swiftshader_indirect -no-boot-anim -verbose -show-kernel
         disable-animations: true
         force-avd-creation: false
         script: |
