@@ -57,18 +57,6 @@ jobs:
           -b common-android15-6.6 --depth=1
         repo sync -c -j$(nproc) --no-clone-bundle --no-tags
 
-    - name: Verify toolchain
-      run: |
-        cd ${{ github.workspace }}/kernel-src
-        echo "Checking for prebuilt toolchains..."
-        ls -la prebuilts/clang/host/linux-x86/ || echo "Clang not found"
-        ls -la prebuilts-master/clang/host/linux-x86/ || echo "Clang (master) not found"
-        
-        if [ -d "prebuilts/clang/host/linux-x86" ]; then
-          CLANG_DIR=$(ls -d prebuilts/clang/host/linux-x86/clang-* | head -n1)
-          echo "Found clang at: $CLANG_DIR"
-          $CLANG_DIR/bin/clang --version
-        fi
 
     - name: Setup FMAC
       run: |
