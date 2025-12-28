@@ -54,7 +54,7 @@ jobs:
         mkdir -p ${{ github.workspace }}/kernel-src
         cd ${{ github.workspace }}/kernel-src
         repo init -u https://android.googlesource.com/kernel/manifest.git \
-          -b common-android15-6.6 --depth=1
+          -b common-android15-6.1 --depth=1
         repo sync -c -j$(nproc) --no-clone-bundle --no-tags
 
 
