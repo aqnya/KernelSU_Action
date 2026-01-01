@@ -91,6 +91,7 @@ jobs:
     - name: Setup FMAC
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/common
+        echo "drivers/fmac/src/fmac.ko">>android/gki_aarch64_modules
         curl -sSL https://raw.githubusercontent.com/FMAC-Team/FMAC/main/scripts/patch.sh | bash -
         
     - name: Setup Configuration for Kernel
