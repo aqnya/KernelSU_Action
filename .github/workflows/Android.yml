@@ -52,7 +52,7 @@ jobs:
         script: |
           echo "=== Kernel Version ==="
           adb root
-          adb push android16-6.12_fmac.ko /data/local/tmp
+          adb push kernel-extracted/android16-6.12_fmac.ko /data/local/tmp
           adb shell insmod /data/local/tmp/android16-6.12_fmac.ko
           adb shell uname -a
           
