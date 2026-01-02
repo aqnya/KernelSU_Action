@@ -29,7 +29,7 @@ jobs:
         # 使用仓库自带的 TOKEN 进行认证
         gh auth setup-git
         # 下载并自动解压
-        gh run download 20636477245 --repo FMAC-Team/build_action --name "android16-6.12_fmac.ko" --dir ./kernel-extracted
+        gh run download 20636477245 --repo FMAC-Team/build_action --name "android16-6.12-lkm" --dir ./kernel-extracted
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
