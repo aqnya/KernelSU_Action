@@ -51,13 +51,9 @@ jobs:
         force-avd-creation: false
         script: |
           echo "=== Kernel Version ==="
+          adb root
           adb shell uname -a
           
           echo "=== Loaded Modules ==="
           adb shell lsmod
           
-          echo "=== Module Load Attempts ==="
-          adb logcat -d | grep -i "module\|insmod" || echo "No module logs found"
-          
-          echo "=== Verify virtio_blk ==="
-          adb shell "cat /proc/modules | grep virtio" || echo "virtio modules not loaded"
