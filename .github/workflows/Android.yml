@@ -48,7 +48,7 @@ jobs:
           echo "=== Kernel Version ==="
           adb root
           adb push fmac.ko /data/local/tmp
-          adb shell insmod -f /data/local/tmp/fmac.ko
+          adb shell insmod /data/local/tmp/fmac.ko -f
           adb shell uname -a
           
           echo "=== Loaded Modules ==="
