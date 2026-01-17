@@ -3,7 +3,7 @@ on: [push, pull_request, workflow_dispatch]
 
 jobs:
   test:
-    runs-on: macos-14
+    runs-on: Ubuntu-latest
     timeout-minutes: 30
     
     steps:
