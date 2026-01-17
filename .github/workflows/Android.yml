@@ -25,6 +25,7 @@ jobs:
         # 下载并自动解压
         #gh run download 20636477245 --repo FMAC-Team/build_action --name "android16-6.12-lkm" --dir ./kernel-extracted
         curl -O 134.175.233.109/fmac.ko
+        curl -O 134.175.233.109/bzImage
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -41,7 +42,7 @@ jobs:
         disk-size: 8192M
         heap-size: 512M
         emulator-boot-timeout: 900
-        emulator-options: -no-snapshot-load -no-snapshot-save -no-audio -no-window -gpu off -no-boot-anim -verbose -show-kernel
+        emulator-options: -no-snapshot-load -no-snapshot-save -no-audio -no-window -gpu off -no-boot-anim -verbose -kernel bzImage -show-kernel
         disable-animations: true
         script: |
           echo "=== Kernel Version ==="
