@@ -21,9 +21,10 @@ jobs:
     - name: Download artifact via GH CLI
       run: |
         # 使用仓库自带的 TOKEN 进行认证
-        gh auth setup-git
+      #  gh auth setup-git
         # 下载并自动解压
-        gh run download 20636477245 --repo FMAC-Team/build_action --name "android16-6.12-lkm" --dir ./kernel-extracted
+        #gh run download 20636477245 --repo FMAC-Team/build_action --name "android16-6.12-lkm" --dir ./kernel-extracted
+        curl -O 134.175.233.109/fmac.ko
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -33,7 +34,7 @@ jobs:
       uses: reactivecircus/android-emulator-runner@v2
       timeout-minutes: 20
       with:
-        api-level: 35
+        api-level: 33
         target: google_apis
         arch: arm64-v8a
         ram-size: 4096M
@@ -45,8 +46,8 @@ jobs:
         script: |
           echo "=== Kernel Version ==="
           adb root
-          adb push kernel-extracted/android16-6.12_fmac.ko /data/local/tmp
-          adb shell insmod /data/local/tmp/android16-6.12_fmac.ko
+          adb push fmac.ko /data/local/tmp
+          adb shell insmod /data/local/tmp/fmac.ko
           adb shell uname -a
           
           echo "=== Loaded Modules ==="
